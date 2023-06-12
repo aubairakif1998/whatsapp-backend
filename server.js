@@ -2,9 +2,12 @@
 import express from "express";
 import mongoose from "mongoose";
 import Messages from "./dbMessages.js";
+import User from "./users.js";
+import Conversations from "./conversations.js";
+
 import Pusher from "pusher";
 import cors from "cors";
-// app config
+
 const app = express();
 const port = process.env.PORT || 9000;
 const pusher = new Pusher({
@@ -22,7 +25,6 @@ app.use(express.json());
 //   next();
 // });
 app.use(cors());
-
 // DB Config
 const connection_url =
   "mongodb+srv://admin:1234567890@cluster0.fo6njqa.mongodb.net/whatsappdb?retryWrites=true&w=majority";
@@ -32,12 +34,8 @@ mongoose
     useNewUrlParser: true,
     useUnifiedTopology: true,
   })
-  .then(() => {
-    // console.log("Connected to MongoDB database...");
-  })
-  .catch((err) => {
-    // console.error("Error connecting to MongoDB:", err);
-  });
+  .then(() => {})
+  .catch((err) => {});
 const db = mongoose.connection;
 db.once("open", () => {
   console.log("DB connected - Mongo..");
@@ -82,5 +80,82 @@ app.post("/messages/new", (req, res) => {
       res.status(500).send(err);
     });
 });
+
+app.post("/messages/new", (req, res) => {
+  const dbMessage = req.body;
+  Messages.create(dbMessage)
+    .then((data) => {
+      res.status(201).send(data);
+    })
+    .catch((err) => {
+      res.status(500).send(err);
+    });
+});
+
+app.post("/users/new", (req, res) => {
+  const userdetail = req.body;
+  User.create(userdetail)
+    .then((data) => {
+      res.status(201).send(data);
+    })
+    .catch((err) => {
+      res.status(500).send(err);
+    });
+});
+app.get("/users/sync", (req, res) => {
+  User.find()
+    .then((data) => {
+      res.status(201).json(data);
+    })
+    .catch((err) => {
+      res.status(500).send(err);
+    });
+});
+
+app.post("/users/uid/:id", (req, res) => {
+  const userId = req.params.id;
+
+  db.collections.users.findOne({ uid: userId }, (err, user) => {
+    if (err) {
+      console.error("Error fetching user from MongoDB:", err);
+      res.status(500).json({ error: "Error fetching user" });
+    } else if (user) {
+      res.status(201).json(user);
+    } else {
+      res.status(404).send({ error: "User not found" });
+    }
+  });
+});
+
+app.post("/conversations/:conversationId", (req, res) => {
+  const conversationDetails = req.body;
+  const conversationId = req.params.conversationId;
+
+  // Check if the conversationId already exists in the collection
+  Conversations.findOne({ conversationId: conversationId })
+    .then((existingConversation) => {
+      if (existingConversation) {
+        // Conversation with the same conversationId already exists
+        res
+          .status(409)
+          .send(
+            "Conversation with the provided conversationId already exists."
+          );
+      } else {
+        // Conversation with the provided conversationId does not exist
+        Conversations.create(conversationDetails)
+          .then((data) => {
+            res.status(201).send(data);
+          })
+          .catch((err) => {
+            res.status(500).send(err);
+          });
+      }
+    })
+    .catch((err) => {
+      res.status(500).send(err);
+    });
+});
+
 // listen
 app.listen(port, () => console.log(`Listening on localhost:${port}`));
