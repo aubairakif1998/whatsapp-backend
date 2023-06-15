@@ -7,8 +7,12 @@ const userSchema = mongoose.Schema({
   email: String,
   createdDate: { type: Date, default: Date.now },
   name: String,
+  firstName: String,
+  lastName: String,
+  phoneNumber: String,
   photoURL: { type: String, default: "" },
   providedData: Array,
+  profileSetupComplete: { type: Boolean, default: false },
   conversations: [
     { type: mongoose.Schema.Types.ObjectId, ref: "conversations" },
   ],

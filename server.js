@@ -39,22 +39,23 @@ mongoose
 const db = mongoose.connection;
 db.once("open", () => {
   console.log("DB connected - Mongo..");
-  const msgCollection = db.collection("messagecontents");
-  const changeStream = msgCollection.watch();
+  const convCollection = db.collection("chatstreams");
+  const changeStream = convCollection.watch();
+
   changeStream.on("change", (change) => {
-    console.log("Change Occured: ", change);
+    console.log("change", change);
     if (change.operationType === "insert") {
-      const messageDetails = change.fullDocument;
-      pusher.trigger("messages", "insert", {
-        name: messageDetails.name,
-        message: messageDetails.message,
-        timestamp: messageDetails.timestamp,
-        received: messageDetails.received,
-      });
-    } else if (change.operationType === "delete") {
-      console.log("deleted", change);
+      console.log("\ninserted doc info", change);
+
+      const conversationDetails = change.fullDocument;
+      console.log("inserted doc info", conversationDetails);
+      pusher.trigger(
+        conversationDetails.conversationId,
+        "insert",
+        conversationDetails
+      );
     } else {
-      console.log("Error trigerring pusher.");
+      console.log("Error triggering Pusher.");
     }
   });
 });
@@ -70,7 +71,7 @@ app.get("/messages/sync", (req, res) => {
       res.status(500).send(err);
     });
 });
-app.post("/messages/new", (req, res) => {
+app.post("/chatstream/:conversationId/message/new", (req, res) => {
   const dbMessage = req.body;
   Messages.create(dbMessage)
     .then((data) => {
@@ -81,27 +82,40 @@ app.post("/messages/new", (req, res) => {
     });
 });
 
-app.post("/messages/new", (req, res) => {
-  const dbMessage = req.body;
-  Messages.create(dbMessage)
-    .then((data) => {
-      res.status(201).send(data);
-    })
-    .catch((err) => {
-      res.status(500).send(err);
-    });
-});
-
-app.post("/users/new", (req, res) => {
+app.post("/users/uid/:id", (req, res) => {
   const userdetail = req.body;
-  User.create(userdetail)
-    .then((data) => {
-      res.status(201).send(data);
+  User.findOne({ uid: userdetail.uid })
+    .then((existingUser) => {
+      if (existingUser) {
+        res.status(200).send(existingUser);
+      } else {
+        User.create(userdetail)
+          .then((newUser) => {
+            res.status(201).send(newUser);
+          })
+          .catch((err) => {
+            res.status(500).send(err);
+          });
+      }
     })
     .catch((err) => {
       res.status(500).send(err);
     });
 });
+// app.post("/users/uid/:id", (req, res) => {
+//   const userId = req.params.id;
+
+//   db.collections.users.findOne({ uid: userId }, (err, user) => {
+//     if (err) {
+//       console.error("Error fetching user from MongoDB:", err);
+//       res.status(500).json({ error: "Error fetching user" });
+//     } else if (user) {
+//       res.status(201).json(user);
+//     } else {
+//       res.status(404).send({ error: "User not found" });
+//     }
+//   });
+// });
 app.get("/users/sync", (req, res) => {
   User.find()
     .then((data) => {
@@ -112,22 +126,7 @@ app.get("/users/sync", (req, res) => {
     });
 });
 
-app.post("/users/uid/:id", (req, res) => {
-  const userId = req.params.id;
-
-  db.collections.users.findOne({ uid: userId }, (err, user) => {
-    if (err) {
-      console.error("Error fetching user from MongoDB:", err);
-      res.status(500).json({ error: "Error fetching user" });
-    } else if (user) {
-      res.status(201).json(user);
-    } else {
-      res.status(404).send({ error: "User not found" });
-    }
-  });
-});
-
-app.post("/conversations/:conversationId", (req, res) => {
+app.post("/conversations/create/:conversationId", (req, res) => {
   const conversationDetails = req.body;
   const conversationId = req.params.conversationId;
 
@@ -155,6 +154,135 @@ app.post("/conversations/:conversationId", (req, res) => {
     .catch((err) => {
       res.status(500).send(err);
     });
+});
+app.put("/users/:id/conversations", (req, res) => {
+  const conversationId = req.body.conversationId;
+  const receiverId = req.body.receiverId;
+  const userId = req.body.senderId;
+  // Update sender's conversationList
+  db.collection("users").updateOne(
+    { _id: userId, conversations: { $ne: conversationId } }, // Avoid adding duplicate conversation IDs
+    {
+      $addToSet: {
+        conversations: {
+          conversationId: conversationId,
+          chatWithUserId: receiverId,
+        },
+      },
+    },
+    (err, result) => {
+      if (err) {
+        console.error("Failed to update sender user document:", err);
+        res.status(500).send("Internal Server Error");
+        return;
+      }
+
+      if (result.modifiedCount === 0) {
+        console.log("Conversation ID already exists in sender user document");
+      }
+
+      // Update receiver's conversationList
+      db.collection("users").updateOne(
+        { _id: receiverId, conversations: { $ne: conversationId } }, // Avoid adding duplicate conversation IDs
+        {
+          $addToSet: {
+            conversations: {
+              conversationId: conversationId,
+              chatWithUserId: userId,
+            },
+          },
+        },
+        (err, result) => {
+          if (err) {
+            console.error("Failed to update receiver user document:", err);
+            res.status(500).send("Internal Server Error");
+            return;
+          }
+
+          if (result.modifiedCount === 0) {
+            console.log(
+              "Conversation ID already exists in receiver user document"
+            );
+          }
+
+          res.status(200).send("Conversation added to the user documents");
+        }
+      );
+    }
+  );
+});
+app.get("/conversations/:conversationId/messages", (req, res) => {
+  const conversationId = req.params.conversationId;
+
+  db.collection("conversations").findOne(
+    { conversationId },
+    (err, conversation) => {
+      if (err) {
+        console.error("Failed to find conversation:", err);
+        res.status(500).send("Internal Server Error");
+        return;
+      }
+
+      if (!conversation) {
+        console.log("Conversation not found");
+        res.status(404).send("Conversation not found");
+        return;
+      }
+
+      const messages = conversation.messages;
+      res.status(200).json(messages);
+    }
+  );
+});
+
+app.post("/conversations/:conversationId/messages/new", (req, res) => {
+  const conversationId = req.params.conversationId;
+  const message = req.body; // Assuming the message data is provided in the request body
+
+  Conversations.findOneAndUpdate(
+    { conversationId: conversationId },
+    { $push: { messages: message } },
+    { new: true, upsert: true }
+  )
+    .then((updatedConversation) => {
+      res.status(201).send(updatedConversation);
+    })
+    .catch((err) => {
+      res.status(500).send(err);
+    });
+});
+app.put("/users/update/:id", (req, res) => {
+  const { id } = req.params;
+  const { phoneNumber, photoURL, firstName, lastName, profileSetupComplete } =
+    req.body;
+
+  db.collection("users").findOneAndUpdate(
+    { uid: id },
+    {
+      $set: {
+        phoneNumber: phoneNumber,
+        photoURL: photoURL,
+        firstName: firstName,
+        lastName: lastName,
+        profileSetupComplete: profileSetupComplete,
+      },
+    },
+    { returnOriginal: false },
+    (err, result) => {
+      if (err) {
+        console.error("Failed to update user document:", err);
+        res.status(500).send("Internal Server Error");
+        return;
+      }
+
+      if (!result.value) {
+        console.log("No user found with the provided ID");
+        res.status(404).send("User not found");
+        return;
+      }
+      res.status(200).json(result.value);
+    }
+  );
 });
 
 // listen

@@ -1,11 +1,13 @@
 import mongoose from "mongoose";
 const whatsappSchema = mongoose.Schema({
-  message: String,
-  name: String,
-  timestamp: String,
-  received: Boolean,
-  sent: Boolean,
+  conversationId: String,
+  content: String,
+  senderId: String,
+  receiverId: String,
+  sentAt: String,
   seen: Boolean,
+  received: Boolean,
+  updatedAt: String,
 });
 // refering to the collection of message content
-export default mongoose.model("messagecontents", whatsappSchema);
+export default mongoose.model("chatstreams", whatsappSchema);
