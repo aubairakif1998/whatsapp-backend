@@ -4,7 +4,7 @@ import mongoose from "mongoose";
 import Messages from "./dbMessages.js";
 import User from "./users.js";
 import Conversations from "./conversations.js";
-
+import LiveUserUpdates from "./userUpdates.js";
 import Pusher from "pusher";
 import cors from "cors";
 
@@ -19,16 +19,10 @@ const pusher = new Pusher({
 });
 // Middleware
 app.use(express.json());
-// app.use((req, res, next) => {
-//   res.setHeader("Access-Control-Allow-Origin", "*");
-//   res.setHeader("Access-Control-Allow-Headers", "*");
-//   next();
-// });
 app.use(cors());
 // DB Config
 const connection_url =
   "mongodb+srv://admin:1234567890@cluster0.fo6njqa.mongodb.net/whatsappdb?retryWrites=true&w=majority";
-
 mongoose
   .connect(connection_url, {
     useNewUrlParser: true,
@@ -41,6 +35,8 @@ db.once("open", () => {
   console.log("DB connected - Mongo..");
   const convCollection = db.collection("chatstreams");
   const changeStream = convCollection.watch();
+  const convCollectionliveUserupdates = db.collection("liveUserupdates");
+  const changeStreamliveUserupdates = convCollectionliveUserupdates.watch();
 
   changeStream.on("change", (change) => {
     console.log("change", change);
@@ -54,6 +50,23 @@ db.once("open", () => {
         "insert",
         conversationDetails
       );
+    } else {
+      console.log("Error triggering Pusher.");
+    }
+  });
+  changeStreamliveUserupdates.on("change", (change) => {
+    if (change.operationType === "insert") {
+      const userDetails = change.fullDocument;
+      User.findOne({ uid: userDetails.uid })
+        .then((existingUser) => {
+          if (existingUser) {
+            res.status(201).send(existingUser);
+          }
+        })
+        .catch((err) => {
+          res.status(500).send(err);
+        });
+      pusher.trigger(userDetails.uid, "insert", userDetails);
     } else {
       console.log("Error triggering Pusher.");
     }
@@ -102,20 +115,6 @@ app.post("/users/uid/:id", (req, res) => {
       res.status(500).send(err);
     });
 });
-// app.post("/users/uid/:id", (req, res) => {
-//   const userId = req.params.id;
-
-//   db.collections.users.findOne({ uid: userId }, (err, user) => {
-//     if (err) {
-//       console.error("Error fetching user from MongoDB:", err);
-//       res.status(500).json({ error: "Error fetching user" });
-//     } else if (user) {
-//       res.status(201).json(user);
-//     } else {
-//       res.status(404).send({ error: "User not found" });
-//     }
-//   });
-// });
 app.get("/users/sync", (req, res) => {
   User.find()
     .then((data) => {
