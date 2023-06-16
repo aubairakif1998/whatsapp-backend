@@ -9,6 +9,8 @@ const userSchema = mongoose.Schema({
   name: String,
   firstName: String,
   lastName: String,
+  isOnline: Boolean,
+  lastSeen: { type: Date, default: Date.now },
   phoneNumber: String,
   photoURL: { type: String, default: "" },
   providedData: Array,

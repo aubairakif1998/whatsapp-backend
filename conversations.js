@@ -1,7 +1,6 @@
 import mongoose from "mongoose";
 // Conversation Schema
 const conversationSchema = mongoose.Schema({
-  _id: String,
   participants: [{ participantId: String }],
   conversationId: String,
   channelName: String,

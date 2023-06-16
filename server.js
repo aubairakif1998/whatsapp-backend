@@ -4,7 +4,7 @@ import mongoose from "mongoose";
 import Messages from "./dbMessages.js";
 import User from "./users.js";
 import Conversations from "./conversations.js";
-import LiveUserUpdates from "./userUpdates.js";
+import LiveUserUpdates from "./dbUserupdates.js";
 import Pusher from "pusher";
 import cors from "cors";
 
@@ -35,7 +35,7 @@ db.once("open", () => {
   console.log("DB connected - Mongo..");
   const convCollection = db.collection("chatstreams");
   const changeStream = convCollection.watch();
-  const convCollectionliveUserupdates = db.collection("liveUserupdates");
+  const convCollectionliveUserupdates = db.collection("userupdates");
   const changeStreamliveUserupdates = convCollectionliveUserupdates.watch();
 
   changeStream.on("change", (change) => {
@@ -55,18 +55,19 @@ db.once("open", () => {
     }
   });
   changeStreamliveUserupdates.on("change", (change) => {
+    console.log(`\nLive Update- Uid: `, change);
     if (change.operationType === "insert") {
       const userDetails = change.fullDocument;
+
       User.findOne({ uid: userDetails.uid })
         .then((existingUser) => {
           if (existingUser) {
-            res.status(201).send(existingUser);
+            pusher.trigger(existingUser.uid, "insert", existingUser);
           }
         })
         .catch((err) => {
           res.status(500).send(err);
         });
-      pusher.trigger(userDetails.uid, "insert", userDetails);
     } else {
       console.log("Error triggering Pusher.");
     }
@@ -94,13 +95,55 @@ app.post("/chatstream/:conversationId/message/new", (req, res) => {
       res.status(500).send(err);
     });
 });
-
+app.post("/userUpdate/:uid/user/newupdate", (req, res) => {
+  const userId = req.params.uid;
+  LiveUserUpdates.create({ uid: userId })
+    .then((createdUser) => {
+      res.status(201).send(`Uid: ${createdUser.uid} update userUpdate`);
+    })
+    .catch((err) => {
+      res.status(500).send(err);
+    });
+});
 app.post("/users/uid/:id", (req, res) => {
-  const userdetail = req.body;
+  const authUser = req.body;
+  const userdetail = {
+    _id: authUser.uid,
+    uid: authUser.uid,
+    email: authUser.email,
+    createdDate: new Date(),
+    name: "",
+    photoURL: "",
+    providedData: authUser.providerData,
+    conversations: [],
+    isOnline: true,
+    lastSeen: new Date(),
+    firstName: "",
+    lastName: "",
+    phoneNumber: "",
+    profileSetupComplete: false,
+    messages: [],
+  };
+
   User.findOne({ uid: userdetail.uid })
     .then((existingUser) => {
       if (existingUser) {
-        res.status(200).send(existingUser);
+        User.findOneAndUpdate(
+          { uid: userdetail.uid },
+          {
+            $set: {
+              isOnline: true,
+              lastSeen: new Date().toUTCString(),
+            },
+          },
+          { upsert: true }
+        )
+          .then((updatedUser) => {
+            res.status(200).send(updatedUser);
+          })
+          .catch((err) => {
+            res.status(500).send(err);
+          });
       } else {
         User.create(userdetail)
           .then((newUser) => {
@@ -110,6 +153,25 @@ app.post("/users/uid/:id", (req, res) => {
             res.status(500).send(err);
           });
       }
+    })
+    .catch((err) => {
+      res.status(500).send(err);
+    });
+});
+app.post("/users/uid/:id/signout", (req, res) => {
+  const userdetail = req.body;
+  User.findOneAndUpdate(
+    { uid: userdetail.uid },
+    {
+      $set: {
+        isOnline: false,
+        lastSeen: new Date().toUTCString(),
+      },
+    },
+    { upsert: true }
+  )
+    .then((updatedUser) => {
+      res.status(200).send("User signed out");
     })
     .catch((err) => {
       res.status(500).send(err);
