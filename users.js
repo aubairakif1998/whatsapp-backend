@@ -15,9 +15,7 @@ const userSchema = mongoose.Schema({
   photoURL: { type: String, default: "" },
   providedData: Array,
   profileSetupComplete: { type: Boolean, default: false },
-  conversations: [
-    { type: mongoose.Schema.Types.ObjectId, ref: "conversations" },
-  ],
+  conversations: Array,
   messages: [{ type: mongoose.Schema.Types.ObjectId, ref: "messages" }],
 });
 

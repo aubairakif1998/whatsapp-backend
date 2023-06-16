@@ -220,58 +220,159 @@ app.put("/users/:id/conversations", (req, res) => {
   const conversationId = req.body.conversationId;
   const receiverId = req.body.receiverId;
   const userId = req.body.senderId;
-  // Update sender's conversationList
-  db.collection("users").updateOne(
-    { _id: userId, conversations: { $ne: conversationId } }, // Avoid adding duplicate conversation IDs
-    {
-      $addToSet: {
-        conversations: {
-          conversationId: conversationId,
-          chatWithUserId: receiverId,
-        },
-      },
-    },
+
+  // Check if conversationId already exists in sender's conversationList
+  db.collection("users").findOne(
+    { _id: userId, "conversations.conversationId": conversationId },
     (err, result) => {
       if (err) {
-        console.error("Failed to update sender user document:", err);
+        console.error("Failed to query sender user document:", err);
         res.status(500).send("Internal Server Error");
         return;
       }
 
-      if (result.modifiedCount === 0) {
+      if (result) {
         console.log("Conversation ID already exists in sender user document");
+        res.status(200).send("Conversation already exists");
+        return;
       }
 
-      // Update receiver's conversationList
+      // Update sender's conversationList
       db.collection("users").updateOne(
-        { _id: receiverId, conversations: { $ne: conversationId } }, // Avoid adding duplicate conversation IDs
+        { _id: userId },
         {
           $addToSet: {
             conversations: {
               conversationId: conversationId,
-              chatWithUserId: userId,
+              chatWithUserId: receiverId,
+              lastMessage: req.body.lastMessage,
             },
           },
         },
         (err, result) => {
           if (err) {
-            console.error("Failed to update receiver user document:", err);
+            console.error("Failed to update sender user document:", err);
             res.status(500).send("Internal Server Error");
             return;
           }
 
           if (result.modifiedCount === 0) {
-            console.log(
-              "Conversation ID already exists in receiver user document"
-            );
+            console.log("Failed to add conversation to sender user document");
+            res.status(500).send("Failed to add conversation");
+            return;
           }
 
-          res.status(200).send("Conversation added to the user documents");
+          // Check if conversationId already exists in receiver's conversationList
+          db.collection("users").findOne(
+            { _id: receiverId, "conversations.conversationId": conversationId },
+            (err, result) => {
+              if (err) {
+                console.error("Failed to query receiver user document:", err);
+                res.status(500).send("Internal Server Error");
+                return;
+              }
+
+              if (result) {
+                console.log(
+                  "Conversation ID already exists in receiver user document"
+                );
+                res.status(200).send("Conversation already exists");
+                return;
+              }
+
+              // Update receiver's conversationList
+              db.collection("users").updateOne(
+                { _id: receiverId },
+                {
+                  $addToSet: {
+                    conversations: {
+                      conversationId: conversationId,
+                      chatWithUserId: userId,
+                      lastMessage: req.body.lastMessage,
+                    },
+                  },
+                },
+                (err, result) => {
+                  if (err) {
+                    console.error(
+                      "Failed to update receiver user document:",
+                      err
+                    );
+                    res.status(500).send("Internal Server Error");
+                    return;
+                  }
+
+                  if (result.modifiedCount === 0) {
+                    console.log(
+                      "Failed to add conversation to receiver user document"
+                    );
+                    res.status(500).send("Failed to add conversation");
+                    return;
+                  }
+
+                  res
+                    .status(200)
+                    .send("Conversation added to the user documents");
+                }
+              );
+            }
+          );
         }
       );
     }
   );
 });
+app.put(
+  "/users/:id/conversations/:conversationId/update/lastMessage",
+  (req, res) => {
+    const conversationId = req.params.conversationId;
+    const receiverId = req.body.receiverId;
+    const userId = req.params.id;
+    const lastMessage = req.body;
+    db.collection("users").updateOne(
+      { _id: userId, "conversations.conversationId": conversationId },
+      {
+        $set: { "conversations.$.lastMessage": lastMessage },
+      },
+      (err, result) => {
+        if (err) {
+          console.error("Failed to update sender user document:", err);
+          res.status(500).send("Internal Server Error");
+          return;
+        }
+
+        if (result.modifiedCount === 0) {
+          console.log("Conversation ID not found in sender user document");
+          res.status(404).send("Conversation not found");
+          return;
+        }
+        db.collection("users").updateOne(
+          { _id: receiverId, "conversations.conversationId": conversationId },
+          {
+            $set: { "conversations.$.lastMessage": lastMessage },
+          },
+          (err, result) => {
+            if (err) {
+              console.error("Failed to update receiver user document:", err);
+              res.status(500).send("Internal Server Error");
+              return;
+            }
+
+            if (result.modifiedCount === 0) {
+              console.log(
+                "Conversation ID not found in receiver user document"
+              );
+              res.status(404).send("Conversation not found");
+              return;
+            }
+
+            res.status(200).send("Last message updated successfully");
+          }
+        );
+      }
+    );
+  }
+);
 app.get("/conversations/:conversationId/messages", (req, res) => {
   const conversationId = req.params.conversationId;
 
@@ -302,7 +403,7 @@ app.post("/conversations/:conversationId/messages/new", (req, res) => {
 
   Conversations.findOneAndUpdate(
     { conversationId: conversationId },
-    { $push: { messages: message } },
+    { $push: { messages: message }, lastMessage: message },
     { new: true, upsert: true }
   )
     .then((updatedConversation) => {
