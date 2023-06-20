@@ -399,11 +399,10 @@ app.get("/conversations/:conversationId/messages", (req, res) => {
 
 app.post("/conversations/:conversationId/messages/new", (req, res) => {
   const conversationId = req.params.conversationId;
-  const message = req.body; // Assuming the message data is provided in the request body
-
+  const message = req.body;
   Conversations.findOneAndUpdate(
     { conversationId: conversationId },
-    { $push: { messages: message }, lastMessage: message },
+    { $push: { messages: message } },
     { new: true, upsert: true }
   )
     .then((updatedConversation) => {

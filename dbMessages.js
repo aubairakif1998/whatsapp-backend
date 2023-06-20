@@ -7,6 +7,8 @@ const whatsappSchema = mongoose.Schema({
   sentAt: String,
   seen: Boolean,
   received: Boolean,
+  mediaURL: String,
+  isMediaAttached: { type: Boolean, default: false },
   updatedAt: String,
 });
 // refering to the collection of message content
