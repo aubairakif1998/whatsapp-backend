@@ -7,6 +7,7 @@ import Conversations from "./conversations.js";
 import LiveUserUpdates from "./dbUserupdates.js";
 import Pusher from "pusher";
 import cors from "cors";
+// import cors from "cors";
 
 const app = express();
 const port = process.env.PORT || 9000;
