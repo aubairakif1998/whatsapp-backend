@@ -17,6 +17,17 @@ const conversationSchema = mongoose.Schema({
       updatedAt: { type: Date, default: Date.now },
     },
   ],
+  lastMessage: {
+    content: String,
+    senderId: String,
+    receiverId: String,
+    sentAt: { type: Date, default: Date.now },
+    mediaURL: String,
+    isMediaAttached: Boolean,
+    seen: Boolean,
+    received: Boolean,
+    updatedAt: { type: Date, default: Date.now },
+  },
   createdAt: { type: Date, default: Date.now },
 });
 
